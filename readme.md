@@ -45,6 +45,7 @@ set ftp_path=
 :: that shoud be compressed and sent to remote host
 set src_rel_path=../build
 ```
+Some other config options, such as name-settings, can be found in top of script, in # configuration area. Feel free to change them for your needs.
 
 So, to use this script you need:
 * set env variables (windows users can run *tu-init-env.bat* in cmd)

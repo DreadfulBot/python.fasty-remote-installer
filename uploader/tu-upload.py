@@ -4,6 +4,7 @@ import sys
 import paramiko
 import math
 
+# configuration area
 prefix = 'tu-'
 srcRelPath=os.path.realpath(os.environ['src_rel_path'])
 rootPath= os.path.dirname(os.path.abspath(__file__))
@@ -11,6 +12,19 @@ localPath = os.path.join(rootPath, srcRelPath)
 archName = prefix + 'blog.tar.gz'
 installerName = prefix + 'install.php'
 
+# here you can set all files, that will be
+# excluded from result archive
+excludedFiles = [
+    'bower_components',
+    'node_modules',
+    archName,
+    'muse_manifest.xml',
+    prefix + 'upload.py',
+    prefix + 'init-env.bat',
+    prefix + 'install.sh',
+    installerName]
+
+# configuration data from env .bat script
 hostAddress = os.environ['ftp_host']
 hostPath = os.environ['ftp_path']
 hostUser = os.environ['ftp_user']
@@ -18,15 +32,7 @@ hostPassword = os.environ['ftp_password']
 
 def getUploadFiles():
     result = []
-    exclude = [
-    'bower_components', 
-    'node_modules', 
-    prefix + 'blog.zip',
-    'muse_manifest.xml', 
-    prefix + 'upload.py', 
-    prefix + 'init-env.bat',
-    prefix + 'install.sh',
-    prefix + 'install.php']
+    exclude = excludedFiles
 
     for root, dirs, files in os.walk(localPath):
         dirs[:] = [d for d in dirs if d not in exclude]
@@ -61,7 +67,7 @@ def connectSftp():
     sftp = paramiko.SFTPClient.from_transport(t)
     return t, sftp
 
-def dicsonnectSftp(sftpClient, transport):
+def disconnectSftp(sftpClient, transport):
     transport.close()
     sftpClient.close()
 
@@ -70,13 +76,14 @@ def uploadFiles(localPath, remotePath):
     try:
         sftpClient.put(localPath, remotePath, callback=printTotals)
     except:
-        dicsonnectSftp(sftpClient, transport)
+        disconnectSftp(sftpClient, transport)
 
 def printTotals(transferred, toBeTransferred):
-	current = math.ceil(transferred / (toBeTransferred / 100))
-	print("\rtransferred: {0}%".format(current), end="")
+    current = math.ceil(transferred / (toBeTransferred / 100))
+    print("\rtransferred: {0}%".format(current), end="")
 
 def execSshCommand(command):
+    client = None
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -85,8 +92,12 @@ def execSshCommand(command):
         stdin, stdout, stderr = client.exec_command(command)
         data = stdout.read() + stderr.read()
         return data.decode("utf-8")
+    except:
+        if(client != None):
+            client.close()
     finally:
-        client.close()
+        if(client != None):
+            client.close()
 
 def runInstall():
     print(execSshCommand('cd ' + hostPath + ';php ' + installerName + ' ' + archName))
@@ -94,7 +105,7 @@ def runInstall():
     print(execSshCommand('cd ' + hostPath + ';rm ' + archName))
 
 def clearLocal(file):
-    print("All junk files were cleared. Have a nice day!\n")
+    print("[x] all junk files were cleared. Have a nice day!\n")
     os.remove(file)
 
 
