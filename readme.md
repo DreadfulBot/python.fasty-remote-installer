@@ -28,21 +28,21 @@ As i noticed, it is much more faster to send one large file than many small file
 Script needs some env-variables to be set. All required variables are in *tu-init-env.bat* script file:
 
 ```cmd
-# ftp user nickname
+:: ftp user nickname
 set ftp_user= 
 
-# ftp user password
+:: ftp user password
 set ftp_password=
 
-# ip-address/hostname of target host
+:: ip-address/hostname of target host
 set ftp_host=
 
-# absolute path for directory, where compressed files and installer
-# script will be placed
+:: absolute path for directory, where compressed files and installer
+:: script will be placed
 set ftp_path=
 
-# relative path (relatively to .py-scrypt) of local files
-# that shoud be compressed and sent to remote host
+:: relative path (relatively to .py-scrypt) of local files
+:: that shoud be compressed and sent to remote host
 set src_rel_path=../build
 ```
 
