@@ -45,10 +45,13 @@ set ftp_path=
 :: that shoud be compressed and sent to remote host
 set src_rel_path=../build
 ```
-Some other config options, such as name-settings, can be found in top of script, in # configuration area. Feel free to change them for your needs.
+In env-script placed some server-depended data, some of which is secret. So, idea is that secret data is stored only in memory, not in local files.
+
+Some other config options, such as name-settings, can be found in *tu-config.ini*. Feel free to change them for your needs. This file stores not secret data, that is free of concrete project and can be used from time to time in each of your project.
 
 So, to use this script you need:
 * set env variables (windows users can run *tu-init-env.bat* in cmd)
+* set *tu-config.ini* file
 * run *tu-upload.py* with python 3.6.x
 * wait operation be finished
 
