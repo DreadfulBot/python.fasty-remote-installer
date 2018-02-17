@@ -90,6 +90,7 @@ def execSshCommand(command):
         client.connect(hostname=hostAddress, username=hostUser, password=hostPassword, port=22)
 
         stdin, stdout, stderr = client.exec_command(command)
+        exit_status = stdout.channel.recv_exit_status()
         data = stdout.read() + stderr.read()
         return data.decode("utf-8")
     except:
