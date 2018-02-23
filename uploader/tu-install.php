@@ -14,10 +14,6 @@ try {
 	$compressedData = new PharData($targetName);
 	$compressedData->extractTo('.', null, TRUE);
 
-	unlink($targetName);
-
-	echo "[x] file " . $targetName . " removed\n";
-
     echo "[x] decompressed succesfully\n";
 } catch (Exception $e) {
 	echo $e->getMessage();
