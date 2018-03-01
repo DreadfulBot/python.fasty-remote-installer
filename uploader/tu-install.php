@@ -15,6 +15,10 @@ try {
 	$compressedData->extractTo('.', null, TRUE);
 
     echo "[x] decompressed succesfully\n";
+	
+	unlink($targetName);
+
+	echo "[x] temp file file " . $targetName . " removed\n";
 } catch (Exception $e) {
 	echo $e->getMessage();
 }
