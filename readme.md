@@ -25,7 +25,7 @@ As i noticed, it is much more faster to send one large file than many small file
 
 **USAGE**
 
-Script needs some env-variables to be set. All required variables are in *tu-init-env.bat* script file:
+Script needs some env-variables to be set. All required variables are in *.env* script file:
 
 ```cmd
 :: ftp user nickname
@@ -47,11 +47,16 @@ set src_rel_path=../build
 ```
 In env-script placed some server-depended data, some of which is secret. So, idea is that secret data is stored only in memory, not in local files.
 
-Some other config options, such as name-settings, can be found in *tu-config.ini*. Feel free to change them for your needs. This file stores not secret data, that is free of concrete project and can be used from time to time in each of your project.
+Some other config options, such as name-settings, can be found in *config.ini*. Feel free to change them for your needs. This file stores not secret data, that is free of concrete project and can be used from time to time in each of your project.
 
 So, to use this script you need:
-* set env variables (windows users can run *tu-init-env.bat* in cmd)
-* set *tu-config.ini* file
-* run *tu-upload.py* with python 3.6.x
+* set env variables (windows users can run *.env* in cmd)
+* set *config.ini* file
+* run *upload.py* with python 3.6.x
 * wait operation be finished
 
+
+**18.03.2018 Imporvements**
+* added multi-env capability
+* added script run.bat
+* use *run.bat %configuration%* to upload files with config data from *.env-%configuration%.bat*
