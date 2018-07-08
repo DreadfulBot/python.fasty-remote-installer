@@ -4,266 +4,262 @@ import sys
 import paramiko
 import math
 import configparser
+import ntpath
 
-# configuration area
-configFile = 'config.ini'
-rootPath = os.path.dirname(os.path.abspath(__file__))
+# config area
+config_file = '.config.shared.ini'
+root = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 
-# some sftpClient stuff
-transport = 0
-sftpClient = 0
-client = 0
+# globals
+entry_separator = None
+excluded_files_list = None
+archives_dir_name = None
 
-# reading env variables
-def readEnv():
-    try:
-        global hostAddress, hostPath, hostUser, hostPassword,\
-            localPath, srcRelPath
+# sftp stuff
+transport = None
+sftp_client = None
 
-        env_src_rel_path = config.get('system', 'env_src_rel_path')
-            
-        if (env_src_rel_path not in os.environ):
-            raise EnvironmentError('src_rel_path not detected in env')
+# ssh stuff
+client = None
 
-        srcRelPath = os.environ[env_src_rel_path]
+def path_leaf(path):
+    head, tail = ntpath.split(path)
+    return tail or ntpath.basename(head)
 
-        localPath = os.path.join(rootPath, srcRelPath)
+def read_config(config_file):
+    if(not os.path.isfile(config_file)):
+        raise FileNotFoundError('config file not found - ' + config_file)
 
-        env_ftp_host_name = config.get('system', 'env_ftp_host_name')
-        env_ftp_path_name = config.get('system', 'env_ftp_path_name')
-        env_ftp_user_name = config.get('system', 'env_ftp_user_name')
-        env_ftp_password_name = config.get('system', 'env_ftp_password_name')
+    config = configparser.ConfigParser()
+    config.read(config_file)
+    return config
 
-        if(env_ftp_host_name not in os.environ or
-                env_ftp_path_name not in os.environ or
-                env_ftp_user_name not in os.environ or
-                env_ftp_password_name not in os.environ
-            ):
-            raise EnvironmentError('ftp parameter is missing')
+def check_argv():
+    if len(sys.argv) < 2:
+        raise EnvironmentError('usage: upload.py <mode>')
 
-        hostAddress = os.environ[env_ftp_host_name]
-        hostPath = os.environ[env_ftp_path_name]
-        hostUser = os.environ[env_ftp_user_name]
-        hostPassword = os.environ[env_ftp_password_name]
-        return 1
-    except EnvironmentError as error:
-        print(error)
-        return -1
+def get_upload_files(src_path, excluded_files_list):
+    files_to_upload = []
+    exclude = excluded_files_list
 
-
-# reading all config information from file %configFile%
-# in configuration area
-def readConfig():
-    try:
-        global prefix, \
-            archName, installerName, excludedFiles, \
-            installerCommands, installerNames, installerParams, \
-            config, envFilePrefix
-
-        config = configparser.ConfigParser()
-        config.read(configFile)
-
-        prefix = config.get('system', 'prefix')
-        envFilePrefix = config.get('system', 'env_file_prefix')
-
-        archName = prefix + config.get('system', 'archive_name')
-
-        excludedFiles = config.get('system', 'excluded_files').split(',')
-
-        installerNames = [prefix + n for n in config.get('system', 'installer_names').split(',')]
-        installerCommands = config.get('system', 'installer_commands').split(',')
-        installerParams = config.get('system', 'installer_params').split(',')
-
-        return 0
-    except EnvironmentError as error:
-        print(error)
-        return -1
-
-# generate list of files for uploading from %srcFilePath%
-# and excluding files from %excludeFilesList% list
-def getUploadFiles(srcFilePath, excludeFilesList):
-    result = []
-    exclude = excludeFilesList
-
-    for root, dirs, files in os.walk(srcFilePath):
+    for root, dirs, files in os.walk(src_path):
         dirs[:] = [d for d in dirs if d not in exclude]
         files[:] = [d for d in files if d not in exclude]
         for f in files:
-            result.append(os.path.relpath(os.path.join(root, f), srcFilePath))
+            files_to_upload.append(os.path.relpath(os.path.join(root, f), src_path))
 
-    return result
+    return files_to_upload
 
-# compress all fils from list %files% to %archName%
-def compressFile(files, archName):
-    os.chdir(localPath)
+def create_archive(files_root, files, arch_path):
+    os.chdir(files_root)
 
-    while os.path.isfile(archName):
+    while os.path.isfile(arch_path):
         print('removing old archive')
-        os.remove(archName)
+        os.remove(arch_path)
 
-    tf = tarfile.open(archName, "w:gz")
+    tf = tarfile.open(arch_path, "w:gz")
 
     try:
         for index, f in enumerate(files):
             current = math.ceil(index/math.ceil(len(files)/100))
             tf.add(f)
-            print("\rcompressed: {0}%".format(current), end="")
+            print("compressed: {0}%".format(current), end="\n")
 
     finally:
         tf.close()
 
-# connectiong over sftpClient protocol
-def connectSftp(transport, sftpClient):
-    if(transport == 0 or sftpClient == 0):
-        transport = paramiko.Transport((hostAddress, 22))
-        transport.connect(username=hostUser, password=hostPassword)
-        sftpClient = paramiko.SFTPClient.from_transport(transport)
+def get_mode_config_file_name():
+    return '.env.'+sys.argv[1]+'.ini'
 
-    return transport, sftpClient
+def load_mode_config(mode_config, i):
+    mode_params = {
+        'dpkg_script': mode_config.get('scripts', 'dpkg_script'),
+        'dpkg_script_params': mode_config.get('scripts', 'dpkg_script_params'),
+        'src_path': mode_config.get('dirs', 'src_path').split(entry_separator)[i],
+        'upload_path': mode_config.get('dirs', 'upload_paths').split(entry_separator)[i],
+        'install_script': mode_config.get('scripts', 'install_scripts').split(entry_separator)[i],
+        'install_script_params': mode_config.get('scripts', 'install_scrpits_params').split(entry_separator)[i],
+        'sftp_user': mode_config.get('sftp', 'sftp_user'),
+        'sftp_password': mode_config.get('sftp', 'sftp_password'),
+        'sftp_host': mode_config.get('sftp', 'sftp_host'),
+        'sftp_port': int(mode_config.get('sftp', 'sftp_port'))
+    }
 
-def disconnectSftp(sftpClient, transport):
-    if(transport != 0):
+    return mode_params
+
+def load_config_file_params(config):
+    global entry_separator, excluded_files_list, archives_dir_name
+    entry_separator = config.get('system', 'entry_separator')
+    excluded_files_list = config.get('system', 'excluded_files').split(entry_separator)
+    archives_dir_name = config.get('system', 'archives_dir_name')
+
+
+def connect_sftp(mode_config, transport, sftp_client):
+    if(transport == None or sftp_client == None):
+        transport = paramiko.Transport((mode_config['sftp_host'], mode_config['sftp_port']))
+        transport.connect(username=mode_config['sftp_user'], password=mode_config['sftp_password'])
+        sftp_client = paramiko.SFTPClient.from_transport(transport)
+
+    return transport, sftp_client
+
+def disconnect_sftp(sftp_client, transport):
+    if(transport != None):
         transport.close()
         print('[x] disconnected transport')
-    if(sftpClient != 0):
-        sftpClient.close()
-        print('[x] disconnected sftpClient client')
+    if(sftp_client != None):
+        sftp_client.close()
+        print('[x] disconnected sftp_client client')
 
-
-# connectiong over ssh protocol
-def connectSsh(client):
-    if(client == 0):
+def connect_ssh(mode_config, client):
+    if(client == None):
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(hostname=hostAddress, username=hostUser, password=hostPassword, port=22)
+        client.connect(
+            hostname=mode_config['sftp_host'], 
+            username=mode_config['sftp_user'], 
+            password=mode_config['sftp_password'], 
+            port=mode_config['sftp_port'])
     return client
 
-def disconnetcSsh(client):
-    if(client != 0):
+def disconnect_ssh(client):
+    if(client != None):
         client.close()
         print('[x] disconnected client')
 
+def upload_files(sftp_client, transport, local_path, upload_path):
+    sftp_client.put(local_path, upload_path, callback=print_totals)
 
-def uploadFiles(localPath, remotePath):
-    try:
-        sftpClient.put(localPath, remotePath, callback=printTotals)
-    except:
-        disconnectSftp(sftpClient, transport)
+def print_totals(transferred, to_be_transferred):
+    current = math.ceil(transferred / (to_be_transferred / 100))
+    print("transferred: {0}%".format(current), end="\n")
 
-def printTotals(transferred, toBeTransferred):
-    current = math.ceil(transferred / (toBeTransferred / 100))
-    print("\rtransferred: {0}%".format(current), end="")
+def exec_ssh_command(command, client):
+    stdin, stdout, stderr = client.exec_command(command)
+    exit_status = stdout.channel.recv_exit_status()
 
+    if(exit_status != 0):
+        raise ChildProcessError('failed to execute remote command ' + command + ' status: ' + str(exit_status))
 
-def execSshCommand(command, client):
-    try:
-        print('> exec ' + command)
-        stdin, stdout, stderr = client.exec_command(command)
-        exit_status = stdout.channel.recv_exit_status()
+    data = stdout.read() + stderr.read()
+    return data.decode("utf-8") + '\n'
 
-        if(exit_status != 0):
-            raise ChildProcessError('failed to execute remote command ' + command + ' status: ' + str(exit_status))
+def replace_install_command_placeholders(params, install_command):
+    command = install_command
 
-        data = stdout.read() + stderr.read()
-        return data.decode("utf-8")
-    except ChildProcessError as error:
-        disconnetcSsh(client)
-        print(error)
+    for key in ['installer_name', 'arch_name', 'mode', 'dpkg_script_name']:
+        if key in params:
+            command = command.replace('!{0}!'.format(key), params[key])
 
-def runInstall(installerNames, installerCommands, installerParams):
-    for i in range(0, len(installerNames)):
+    return command
 
-        installer = installerNames[i]
-        command = installerCommands[i]
-        params = installerParams[i]
+def cd_upload_path_command(params):
+    return 'cd ' + params['upload_path'] + ';'
 
-        print('[x] running script ' + installer)
+def print_formatted_command(command):
+    print ('> ' + command + '\n')
 
-        paramsConcat = ''
-        for p in params.split(';'):
-            if(p == '!archName!'):
-                paramsConcat += ' ' + archName
-            else:
-                paramsConcat += ' ' + p
-        
-        print(execSshCommand('cd ' + hostPath + ';' + command + ' ' + installer + paramsConcat, client))
-            
-
-def clearLocal(file):
-    os.remove(file)
-
-def clearRemote(file):
-    print(execSshCommand('cd ' + hostPath + ';rm ' + file, client))
-
-    for i in range(0, len(installerNames)):
-        print(execSshCommand('cd ' + hostPath + ';rm ' + installerNames[i], client))
-
+# main
 if __name__ == "__main__":
     try:
-        print('[x] reading startup parameters ...')
 
-        print('[x] reading config file ... ')
+        check_argv()
 
-        if(readConfig() < 0):
-            raise ImportError ('config read error')
+        print('[x] loading config files...\n')
 
-        print('[x] reading env variables ...')
-        if(readEnv() < 0):
-            raise EnvironmentError('reading env error')
+        print('[x] loading {0} config file\n'.format(config_file))
 
-        print('[x] creating zip file ... ')
+        shared_config = read_config(config_file)
+        
+        load_config_file_params(shared_config)
 
-        files = getUploadFiles(localPath, excludedFiles)
+        print('[x] loading {0} config file\n'.format(get_mode_config_file_name()))
 
-        compressFile(files, os.path.join(rootPath, archName))
+        mode_config = read_config(get_mode_config_file_name())
 
-        print(' OK')
+        for i in range(len(mode_config.get('dirs', 'src_path').split(entry_separator))):
+            mode_config_params = load_mode_config(mode_config, i)
+            upload_files_list = get_upload_files(mode_config_params['src_path'], excluded_files_list)
 
-        print('[x] connecting to sftpClient-server ... ')
+            arch_path = os.path.join(root, archives_dir_name, path_leaf(mode_config_params['src_path']) + '.tar.gz')
+            create_archive(mode_config_params['src_path'], upload_files_list, arch_path)
+            
+            transport, sftp_client = connect_sftp(mode_config_params, transport, sftp_client)
 
-        transport, sftpClient = connectSftp(transport, sftpClient)
+            # upload archive
+            print('[x] uploading files archive {0}\n'.format(path_leaf(arch_path)))
+            upload_files(sftp_client, transport, arch_path, mode_config_params['upload_path'] + '/' + path_leaf(arch_path))
 
-        print('OK')
+            # upload dpkg script
+            print('[x] uploading dpkg script {0}\n'.format(path_leaf(mode_config_params['dpkg_script'])))
+            upload_files(
+                sftp_client, 
+                transport, 
+                os.path.join(root, mode_config_params['dpkg_script']),
+                mode_config_params['upload_path'] + '/' + path_leaf(mode_config_params['dpkg_script']))
 
-        print('[x] uploading files data ... ')
+            # upload install script
+            print('[x] uploading install script {0}\n'.format(path_leaf(mode_config_params['install_script'])))
+            upload_files(
+                sftp_client, 
+                transport, 
+                os.path.join(root, mode_config_params['install_script']), 
+                mode_config_params['upload_path'] + '/' + path_leaf(mode_config_params['install_script']))
 
-        uploadFiles(os.path.join(rootPath, archName), hostPath + '/' + archName)
+            client = connect_ssh(mode_config_params, client)
 
-        print(' OK')
+            # run dpkg script
+            print('[x] running dpkg script\n')
+            dpkg_command = 'cd ' + mode_config_params['upload_path'] + ';' + replace_install_command_placeholders(
+                {
+                    'dpkg_script_name' : path_leaf(mode_config_params['dpkg_script']),
+                    'arch_name' : path_leaf(arch_path),
+                    'mode' : sys.argv[1]
+                },
+                mode_config_params['dpkg_script_params']
+            )
+            
+            print_formatted_command(dpkg_command)
+            print(exec_ssh_command(dpkg_command, client))
 
-        print('[x] uploading installer data ... ')
+            # run install script
+            print('[x] running install script\n')
+            install_command = cd_upload_path_command(mode_config_params) + replace_install_command_placeholders(
+               {
+                   'installer_name' : path_leaf(mode_config_params['install_script']),
+                   'arch_name' : path_leaf(arch_path),
+                   'mode' : sys.argv[1]
+               },
+               mode_config_params['install_script_params']
+            )
+            
+            print_formatted_command(install_command)
+            print(exec_ssh_command(install_command, client))
 
-        for installerName in installerNames:
-            uploadFiles(os.path.join(rootPath, installerName), hostPath + '/' + installerName)
+            # clear scripts
+            ## remove archive
 
-        print(' OK')
+            ### local
+            os.remove(arch_path)
 
-        print('connecting over SSH')
+            ### remote
+            clear_command = '{0} rm {1};'.format(cd_upload_path_command(mode_config_params), path_leaf(arch_path))
 
-        client = connectSsh(client)
+            print_formatted_command(clear_command)
+            print(exec_ssh_command(clear_command, client))
 
-        print('OK')
+            ## remove dpkg script
+            clear_command = '{0} rm {1};'.format(cd_upload_path_command(mode_config_params), path_leaf(mode_config_params['dpkg_script']))
 
-        print('[x] running install script on server ...')
+            print_formatted_command(clear_command)
+            print(exec_ssh_command(clear_command, client))
 
-        runInstall(installerNames, installerCommands, installerParams)
+            ## remove install script
+            clear_command = '{0} rm {1};'.format(cd_upload_path_command(mode_config_params), path_leaf(mode_config_params['install_script']))
 
-        print ('OK')
-
-        clearLocal(os.path.join(rootPath, archName))
-
-        print('[x] all local junk files were cleared!')
-
-        clearRemote(archName)
-
-        print('[x] all remote junk files were cleared!')
-
-        print('[x] all tasks executed!')
-
-        disconnetcSsh(client)
-        disconnectSftp(sftpClient, transport)
-
-        print('[x] exec finished')
+            print_formatted_command(clear_command)
+            print(exec_ssh_command(clear_command, client))
 
     except Exception as ex:
         print(ex)
+        disconnect_sftp(sftp_client, transport)
+        disconnect_ssh(client)
